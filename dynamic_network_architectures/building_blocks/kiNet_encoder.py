@@ -6,7 +6,7 @@ from typing import Type
 from torch.nn.modules.conv import _ConvNd
 from torch.nn.modules.dropout import _DropoutNd
 from dynamic_network_architectures.building_blocks.simple_conv_blocks import StackedConvBlocks
-from dynamic_network_architectures.building_blocks.helper import maybe_convert_scalar_to_list, get_matching_pool_op
+from dynamic_network_architectures.building_blocks.helper import maybe_convert_scalar_to_list
 
 # simple encoder that does upsamples with each resolution change for KiNet
 class PlainUpsampleEncoder(torch.nn.Module):
