@@ -19,7 +19,7 @@ class PlainUpsampleEncoder(torch.nn.Module):
                  strides: int | list[int] | tuple[int, ...],
                  n_conv_per_stage: int | list[int] | tuple[int, ...],
                  interpScaleFactors: int | list[int] | tuple[int, ...],
-                 interpMode: str = "bilinear",
+                 interpMode: str,
                  conv_bias: bool = False,
                  norm_op: None | Type[nn.Module] = None,
                  norm_op_kwargs: dict = None,
@@ -46,20 +46,19 @@ class PlainUpsampleEncoder(torch.nn.Module):
                 assert len(features_per_stage) == n_stages, "features_per_stage must have as many entries as we have resolution stages (n_stages)"
                 assert len(strides) == n_stages, "strides must have as many entries as we have resolution stages (n_stages). " \
                                                     "Important: first entry is recommended to be 1, else we run strided conv drectly on the input"
-                assert len(interpScaleFactors) == n_stages, "scale factors must have as may entries as we have resolution stages (n_stages)." \
-                                                            "We never apply upsample directly to input, so the first entry should be 1 for accurate memory estimation."
+                assert len(interpScaleFactors) == n_stages, "scale factors must have as may entries as we have resolution stages (n_stages)."
                 
                 # iterate through network stages, building out convolution blocks with upsamples
                 stages = []
                 for curStage in range(n_stages):
                     stageLayers = [] # empty list for this stage's layers
-                    # NOTE: we require the upsample parameter, so all but the first layer will have the upsample operation to start
-                    if curStage != 0:
-                        stageLayers.append( interpolate(scaleFactor=interpScaleFactors[curStage], interpMode=interpMode) )
+                    # conv layers first
                     stageLayers.append( StackedConvBlocks(n_conv_per_stage[curStage], conv_op, input_channels,
                                                           features_per_stage[curStage], kernel_sizes[curStage], strides[curStage], 
                                                           conv_bias, norm_op, norm_op_kwargs, dropout_op, dropout_op_kwargs,
                                                           nonlin, nonlin_kwargs, nonlin_first) )
+                    # upsample after conv layers -- technically reverses order from KiUnet paper, but follows original Unet order -- shouldn't effect output
+                    stageLayers.append( interpolate(scaleFactor=interpScaleFactors[curStage], interpMode=interpMode) )
                     stages.append( nn.Sequential(*stageLayers) )
                     input_channels = features_per_stage[curStage] # update input channels for next iteration
                     
@@ -84,6 +83,7 @@ class PlainUpsampleEncoder(torch.nn.Module):
     def forward(self, x):
         outputs = []
         # iterate through layers -- go one by one to get output for skip connections
+        print(len(self.stages))
         for stage in self.stages:
             x = stage(x)
             outputs.append(x)
@@ -102,8 +102,8 @@ class PlainUpsampleEncoder(torch.nn.Module):
                         output += self.stages[s][-1].compute_conv_feature_map_size(input_size)
             else:
                 output += self.stages[s].compute_conv_feature_map_size(input_size)
-    
-            input_size = [(i*k) // j for i, j, k in zip(input_size, self.strides[s], self.scale_factors[s])]
+            
+            input_size = [(i*k) // j for i, j, k in zip(input_size, self.strides[s], [self.scale_factors[s]]*len(self.strides[s]) )]
         return output
                 
                 
@@ -119,3 +119,6 @@ class interpolate(torch.nn.Module):
         x = self.interp(x, scale_factor=self.scaleFactor, mode=self.interpMode)
         return x             
                 
+    def compute_conv_feature_map_size(self, input_size):
+        # the interpolation to upsample is not a learnable parameter, so we just return 0
+        return 0
