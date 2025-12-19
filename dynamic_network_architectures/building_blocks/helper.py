@@ -176,6 +176,28 @@ def get_matching_dropout(conv_op: Type[_ConvNd] = None, dimension: int = None) -
         return nn.Dropout2d
     elif dimension == 3:
         return nn.Dropout3d
+    
+def get_matching_interp_mode(conv_op: Type[_ConvNd] = None, dimension: int = None) -> str:
+    """
+    You MUST set EITHER conv_op OR dimension. Do not set both!
+
+    :param conv_op:
+    :param dimension:
+    :return:
+    """
+    assert not ((conv_op is not None) and (dimension is not None)), \
+        "You MUST set EITHER conv_op OR dimension. Do not set both!"
+    if conv_op is not None:
+        dimension = convert_conv_op_to_dim(conv_op)
+    assert dimension in [1, 2, 3], 'Dimension must be 1, 2 or 3'
+    if dimension == 1:
+        return "linear"
+    elif dimension == 2:
+        return "bilinear"
+    elif dimension == 3:
+        return "trilinear"
+    
+    
 
 
 def maybe_convert_scalar_to_list(conv_op, scalar):
