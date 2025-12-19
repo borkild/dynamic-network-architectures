@@ -28,7 +28,7 @@ class kiNetDecoder(torch.nn.Module):
         super().__init__()
         self.encoder = encoder
         self.num_classes = num_classes
-        n_stages_encoder = len(encoder.output_channels)
+        n_stages_encoder = len(encoder.outputChannels)
         if isinstance(n_conv_per_stage, int):
             n_conv_per_stage = [n_conv_per_stage] * (n_stages_encoder - 1)
         assert len(n_conv_per_stage) == n_stages_encoder - 1, "n_conv_per_stage must have as many entries as we have " \
@@ -48,17 +48,19 @@ class kiNetDecoder(torch.nn.Module):
         # starts at largest size, and work our way down
         stages = []
         maxPools = []
-        final1x1Conv = []
-        for curStage in range(1, n_stages_encoder):
-            input_features_below = encoder.outputChannels[-curStage]
-            input_features_next = encoder.outputChannels[-(curStage+1)]
+        for curStage in range(0, n_stages_encoder):
+            input_features_below = encoder.outputChannels[-(curStage+1)]
+            if curStage + 2 > n_stages_encoder: # check if we're on our last layer of encoder, if so our next features is the numnber of classes
+                input_features_above = num_classes
+            else:
+                input_features_above = encoder.outputChannels[-(curStage+2)]
             factorForPool = encoder.scale_factors[-curStage]
             # get max pooling operation for this stage
             maxPools.append( get_matching_pool_op(conv_op, pool_type="max")(kernel_size=factorForPool, stride=factorForPool) )
             # get convolutions for stage
             stages.append( StackedConvBlocks(n_conv_per_stage[curStage-1],
                                             encoder.conv_op, input_features_below,
-                                            input_features_next,
+                                            input_features_above,
                                             encoder.kernel_sizes[-(curStage + 1)], 
                                             encoder.strides[-curStage],
                                             conv_bias,
@@ -69,12 +71,9 @@ class kiNetDecoder(torch.nn.Module):
                                             nonlin,
                                             nonlin_kwargs,
                                             nonlin_first ) )
-            
-        final1x1Conv.append( encoder.conv_op(encoder.outputChannels[0], num_classes, 1, 1, 0, bias=True) )
         
         self.stages = nn.ModuleList(stages)
         self.maxPools = nn.ModuleList(maxPools)
-        self.finalConv = nn.ModuleList(final1x1Conv)
         
         
     def forward(self, skips):
@@ -84,18 +83,17 @@ class kiNetDecoder(torch.nn.Module):
         curInput = skips[-1]
         # iterate through decoder stages
         for decodeStage in range(len(self.stages)):
-            # apply max pool
-            curInput =  self.maxPools[decodeStage](curInput)
-            # add max pooled input for skip connection
-            curInput = torch.add(curInput, skips[-(decodeStage+2)])
-            # apply convolutions
+            # apply convolutions first
             curInput = self.stages[decodeStage](curInput)
-        
-        # apply final 1x1 convolution
-        finalOut = self.finalConv[0](curInput)
+            # apply max pool next
+            curInput =  self.maxPools[decodeStage](curInput)
+            # don't add skips after last layer
+            if decodeStage != len(self.stages) -1:
+                # add max pooled input for skip connection now add skip connection before next stage
+                curInput = torch.add(curInput, skips[-(decodeStage+2)])
         
         # return output
-        return finalOut
+        return curInput
     
     
     def compute_conv_feature_map_size(self, input_size):
@@ -103,7 +101,7 @@ class kiNetDecoder(torch.nn.Module):
         # least have the size of the skip above that (therefore -1)
         skip_sizes = []
         for s in range(len(self.encoder.strides) - 1):
-            skip_sizes.append([i // j for i, j in zip(input_size, self.encoder.strides[s])])
+            skip_sizes.append([(i*k) // j for i, j, k in zip(input_size, self.encoder.strides[s], [self.encoder.scale_factors[s]]*len(self.encoder.strides[s]) )])
             input_size = skip_sizes[-1]
         # print(skip_sizes)
         
@@ -116,10 +114,7 @@ class kiNetDecoder(torch.nn.Module):
                         output += self.stages[s][-1].compute_conv_feature_map_size(input_size)
             else:
                 output += self.stages[s].compute_conv_feature_map_size(input_size)
-            input_size = [i // j for i, j in zip(input_size, self.strides[s])]
-            
-        # add 1x1 convolution
-        output += np.prod(self.num_classes, input_size)
+            input_size = [i // j for i, j in zip(input_size, [self.encoder.scale_factors[-(s+1)]]*len(input_size)  )]
         
         return output
         
