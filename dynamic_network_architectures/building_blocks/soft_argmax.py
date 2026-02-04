@@ -25,8 +25,6 @@ class soft_argmax(nn.Module):
         
         # multiply softmax and position vector, and sum across channels
         softargmax = torch.sum( softmax * pos, dim=1)
-        print(softargmax.size())
-        
         return softargmax
         
     
