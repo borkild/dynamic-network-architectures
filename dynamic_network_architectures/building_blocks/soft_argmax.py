@@ -23,6 +23,8 @@ class soft_argmax(nn.Module):
         else:
             raise ValueError("Dimension of input not recognized. Make sure your input is in form B x C x W x H (x D)")
         
+        # move to save device as softmax
+        pos = pos.to(softmax.device)
         # multiply softmax and position vector, and sum across channels
         softargmax = torch.sum( softmax * pos, dim=1)
         return softargmax
