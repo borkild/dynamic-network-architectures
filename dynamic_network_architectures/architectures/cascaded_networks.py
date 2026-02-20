@@ -50,19 +50,20 @@ class cascaded_networks(nn.Module):
             # note that the background is always skipped, we always assume we aren't going to pass it to the next network
             if self.split_intermediates:
                 # create array for previous network output -- take 1 away from number of channels, as we don't use background
-                adj_out_size = out_size
+                adj_out_size = torch.tensor(out_size)
                 adj_out_size[1] = adj_out_size[1]-1
-                x_temp = torch.zeros(adj_out_size)
+                adj_out_size = tuple(adj_out_size)
+                x_temp = torch.zeros(adj_out_size).to(input.device)
                 for chanIdx in range(1,out_size[1]): # iterate through previous network output channels
                     # we do all this to avoid causing 0 gradients to occur from rounding
                     diff_mat = x - float(chanIdx)
                     diff_mat = torch.round(diff_mat)
                     if input.dim() == 3:
-                        x_temp[:, chanIdx-1, :] = x[diff_mat == 0] / float(chanIdx)
+                        x_temp[:, chanIdx-1, :] = torch.where(diff_mat == 0, x, 0) / float(chanIdx)
                     elif input.dim() == 4:
-                        x_temp[:, chanIdx-1, :, :] = x[diff_mat == 0] / float(chanIdx)
+                        x_temp[:, chanIdx-1, :, :] = torch.where(diff_mat == 0, x, 0) / float(chanIdx)
                     elif input.dim() == 5:
-                        x_temp[:, chanIdx-1, :, :, :] = x[diff_mat == 0] / float(chanIdx)
+                        x_temp[:, chanIdx-1, :, :, :] = torch.where(diff_mat == 0, x, 0) / float(chanIdx)
                     else:
                         raise ValueError("Dimensions are an unrecognized number. We expect input data to be 1D, 2D, or 3D. It should be in the form B x C x W (x H) (x D)")
                 # update output with multiple channels seperate, and pixels in that class being ~1 (only around 1 because of soft argmax)  
