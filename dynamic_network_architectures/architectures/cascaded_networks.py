@@ -12,7 +12,8 @@ class cascaded_networks(nn.Module):
                  input_to_all_networks: bool = True, 
                  transforms_between_networks: list = [],
                  intermediate_outputs: bool = False,
-                 split_intermediate_outputs: bool = False
+                 split_intermediate_outputs: bool = False,
+                 deep_supervision: bool = False
                  ):
         super().__init__()
         """
@@ -34,10 +35,12 @@ class cascaded_networks(nn.Module):
         self.data_transforms = transforms_between_networks
         self.intermediate_outputs = intermediate_outputs
         self.split_intermediates = split_intermediate_outputs
+        self.deep_supervision = deep_supervision
         # we use a soft argmax function to approximate the argmax normally applied
         self.soft_argmax = soft_argmax()
         
     def forward(self, input):
+        seg_outputs = []
         # we perform the first network pass outside the loop to keep input untouched in case we want to pass it through the networks
         x = self.networks[0](input)
         # start from 1, passing inputs to next network
@@ -46,6 +49,8 @@ class cascaded_networks(nn.Module):
             out_size = x.size()
             # pass to differentiable soft-argmax function
             x = self.soft_argmax(x)
+            # put into list
+            seg_outputs.append(x)
             # check if we need to split our outputs, then concatenate them, so each output becomes its own input channel for the next network
             # note that the background is always skipped, we always assume we aren't going to pass it to the next network
             if self.split_intermediates:
@@ -73,9 +78,12 @@ class cascaded_networks(nn.Module):
                 x = torch.cat([input, x], dim=1)
             # pass to next network
             x = self.networks[netIdx](x)
-            
-        # return output
-        return x
+        
+        # return output -- if deep supervision is enabled, then we return list of outputs that includes the intermediate segmentations
+        if self.deep_supervision:
+            return seg_outputs
+        else:
+            return seg_outputs[-1]
     
     # function to get the number of output channels from each network in the cascade
     def get_num_output_channels(self):
