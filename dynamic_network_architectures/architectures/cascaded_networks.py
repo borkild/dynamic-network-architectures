@@ -74,6 +74,8 @@ class cascaded_networks(nn.Module):
                 # update output with multiple channels seperate, and pixels in that class being ~1 (only around 1 because of soft argmax)  
                 x = x_temp
             
+            print(input.shape)
+            print(x.shape)
             if self.input_skips: # concatenate original input on channel dimension
                 x = torch.cat([input, x], dim=1)
             # pass to next network
