@@ -52,7 +52,7 @@ class cascaded_networks(nn.Module):
             # put into list
             seg_outputs.append(x)
             # check if we expect our masks from the previous network to be combined into one channel
-            if self.split_intermediates:
+            if self.split_intermediates: # if not, we just get rid of the background channel
                 x = x[:, 1:]
             else: # otherwise, we apply a soft-argmax to collapse it into one channel
                 x = self.soft_argmax(x)
