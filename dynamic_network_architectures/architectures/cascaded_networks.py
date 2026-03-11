@@ -47,8 +47,11 @@ class cascaded_networks(nn.Module):
         for netIdx in range(1, len(self.networks)):
             # save network output size for splitting later
             out_size = x.size()
-            # pass to differentiable soft-argmax function
-            x = self.soft_argmax(x)
+            # pass to differentiable soft-argmax function if in train mode
+            if self.training:
+                x = self.soft_argmax(x)
+            else:
+                x = torch.softmax(x, 1)
             # put into list
             seg_outputs.append(x)
             # check if we need to split our outputs, then concatenate them, so each output becomes its own input channel for the next network
@@ -74,8 +77,6 @@ class cascaded_networks(nn.Module):
                 # update output with multiple channels seperate, and pixels in that class being ~1 (only around 1 because of soft argmax)  
                 x = x_temp
             
-            print(input.shape)
-            print(x.shape)
             if self.input_skips: # concatenate original input on channel dimension
                 x = torch.cat([input, x], dim=1)
             # pass to next network
