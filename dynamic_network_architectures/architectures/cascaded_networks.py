@@ -47,35 +47,15 @@ class cascaded_networks(nn.Module):
         for netIdx in range(1, len(self.networks)):
             # save network output size for splitting later
             out_size = x.size()
-            # pass to differentiable soft-argmax function if in train mode
-            if self.training:
-                x = self.soft_argmax(x)
-            else:
-                x = torch.softmax(x, 1)
+            # pass to differentiable softmax function to get probabilities
+            x = torch.softmax(x, 1)
             # put into list
             seg_outputs.append(x)
-            # check if we need to split our outputs, then concatenate them, so each output becomes its own input channel for the next network
-            # note that the background is always skipped, we always assume we aren't going to pass it to the next network
+            # check if we expect our masks from the previous network to be combined into one channel
             if self.split_intermediates:
-                # create array for previous network output -- take 1 away from number of channels, as we don't use background
-                adj_out_size = torch.tensor(out_size)
-                adj_out_size[1] = adj_out_size[1]-1
-                adj_out_size = tuple(adj_out_size)
-                x_temp = torch.zeros(adj_out_size).to(input.device)
-                for chanIdx in range(1,out_size[1]): # iterate through previous network output channels
-                    # we do all this to avoid causing 0 gradients to occur from rounding
-                    diff_mat = x - float(chanIdx)
-                    diff_mat = torch.round(diff_mat)
-                    if input.dim() == 3:
-                        x_temp[:, chanIdx-1, :] = torch.where(diff_mat == 0, x, 0) / float(chanIdx)
-                    elif input.dim() == 4:
-                        x_temp[:, chanIdx-1, :, :] = torch.where(diff_mat == 0, x, 0) / float(chanIdx)
-                    elif input.dim() == 5:
-                        x_temp[:, chanIdx-1, :, :, :] = torch.where(diff_mat == 0, x, 0) / float(chanIdx)
-                    else:
-                        raise ValueError("Dimensions are an unrecognized number. We expect input data to be 1D, 2D, or 3D. It should be in the form B x C x W (x H) (x D)")
-                # update output with multiple channels seperate, and pixels in that class being ~1 (only around 1 because of soft argmax)  
-                x = x_temp
+                x = x[:, 1:]
+            else: # otherwise, we apply a soft-argmax to collapse it into one channel
+                x = self.soft_argmax(x)
             
             if self.input_skips: # concatenate original input on channel dimension
                 x = torch.cat([input, x], dim=1)
