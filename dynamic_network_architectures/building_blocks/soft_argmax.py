@@ -26,7 +26,7 @@ class soft_argmax(nn.Module):
         # move to save device as softmax
         pos = pos.to(softmax.device)
         # multiply softmax and position vector, and sum across channels
-        softargmax = torch.sum( softmax * pos, dim=1)
+        softargmax = torch.sum( softmax * pos, dim=1, keepdim=True)
         return softargmax
         
     
