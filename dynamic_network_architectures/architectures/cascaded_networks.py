@@ -9,21 +9,12 @@ from dynamic_network_architectures.building_blocks.soft_argmax import soft_argma
 class cascaded_networks(nn.Module):
     def __init__(self,
                  networks: list[torch.nn.Module] | nn.ModuleList, # list of networks to chain together
-                 input_to_all_networks: bool = True, 
-                 transforms_between_networks: list = [],
-                 intermediate_outputs: bool = False,
-                 split_intermediate_outputs: bool = False,
                  deep_supervision: bool = False
                  ):
         super().__init__()
         """
             networks: list of initialized networks
-            input_to_all_networks: boolean parameter that tells us if we should concatenate our
-                                    initial input with each network output before passing it to the next network
-            transforms_between_networks: list of transforms to apply to network outputs before passing to next network
-                                            NOTE: make sure these don't break the computational graph
-            intermediate_outputs: boolean that tells us if we should output intermediate outputs
-                                    Can be good to calculate loss with more than just the final output if wanted.
+            deep_supervision: boolean to tell us if we will be using deep supervision during training
         """
         
         # check if our list of networks is already a nn.ModuleList
@@ -31,34 +22,24 @@ class cascaded_networks(nn.Module):
             self.networks = networks
         else: 
             self.networks = torch.nn.ModuleList(networks)
-        self.input_skips = input_to_all_networks
-        self.data_transforms = transforms_between_networks
-        self.intermediate_outputs = intermediate_outputs
-        self.split_intermediates = split_intermediate_outputs
         self.deep_supervision = deep_supervision
         # we use a soft argmax function to approximate the argmax normally applied
         self.soft_argmax = soft_argmax()
         
     def forward(self, input):
         seg_outputs = []
-        # we perform the first network pass outside the loop to keep input untouched in case we want to pass it through the networks
+        # we perform the first network pass outside the loop to keep input untouched
         x = self.networks[0](input)
         # start from 1, passing inputs to next network
         for netIdx in range(1, len(self.networks)):
-            # save network output size for splitting later
-            out_size = x.size()
+            # put into list before softmax operation -- for deep supervision (loss takes logits)
+            seg_outputs.append(x)
             # pass to differentiable softmax function to get probabilities
             x = torch.softmax(x, 1)
-            # put into list
-            seg_outputs.append(x)
-            # check if we expect our masks from the previous network to be combined into one channel
-            if self.split_intermediates: # if not, we just get rid of the background channel
-                x = x[:, 1:]
-            else: # otherwise, we apply a soft-argmax to collapse it into one channel
-                x = self.soft_argmax(x)
-            
-            if self.input_skips: # concatenate original input on channel dimension
-                x = torch.cat([input, x], dim=1)
+            # get rid of background channel
+            x = x[:, 1:]
+            # concatenate original input on channel dimension
+            x = torch.cat([input, x], dim=1)
             # pass to next network
             x = self.networks[netIdx](x)
         
@@ -77,7 +58,6 @@ class cascaded_networks(nn.Module):
             
         return output_channels
             
-        
     
     def compute_conv_feature_map(self, input_size):
         # grab number of classes outputted from each network
