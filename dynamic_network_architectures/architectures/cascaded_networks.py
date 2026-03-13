@@ -30,10 +30,9 @@ class cascaded_networks(nn.Module):
         seg_outputs = []
         # we perform the first network pass outside the loop to keep input untouched
         x = self.networks[0](input)
+        seg_outputs.append(x)
         # start from 1, passing inputs to next network
         for netIdx in range(1, len(self.networks)):
-            # put into list before softmax operation -- for deep supervision (loss takes logits)
-            seg_outputs.append(x)
             # pass to differentiable softmax function to get probabilities
             x = torch.softmax(x, 1)
             # get rid of background channel
@@ -42,6 +41,8 @@ class cascaded_networks(nn.Module):
             x = torch.cat([input, x], dim=1)
             # pass to next network
             x = self.networks[netIdx](x)
+            # put into list before softmax operation -- for deep supervision (loss takes logits)
+            seg_outputs.append(x)
         
         # return output -- if deep supervision is enabled, then we return list of outputs that includes the intermediate segmentations
         if self.deep_supervision:
@@ -83,4 +84,61 @@ class cascaded_networks(nn.Module):
                 
         return feature_map_sum
                 
-                
+    
+    
+if __name__ == "__main__":
+    tstInput = torch.rand((1, 1, 128, 128, 128))
+    
+    from dynamic_network_architectures.architectures.unet import PlainConvUNet
+    
+    model1 = PlainConvUNet(
+    1,
+    6,
+    (32, 64, 125, 256, 320, 320),
+    nn.Conv3d,
+    3,
+    (1, 2, 2, 2, 2, 2),
+    (2, 2, 2, 2, 2, 2),
+    3,
+    (2, 2, 2, 2, 2),
+    False,
+    nn.BatchNorm3d,
+    None,
+    None,
+    None,
+    nn.ReLU,
+    deep_supervision=False,
+    )
+    
+    model2 = PlainConvUNet(
+    3,
+    6,
+    (32, 64, 125, 256, 320, 320),
+    nn.Conv3d,
+    3,
+    (1, 2, 2, 2, 2, 2),
+    (2, 2, 2, 2, 2, 2),
+    2,
+    (2, 2, 2, 2, 2),
+    False,
+    nn.BatchNorm3d,
+    None,
+    None,
+    None,
+    nn.ReLU,
+    deep_supervision=False,
+    )
+    
+    tstNet = cascaded_networks([model1, model2])
+    
+    tstout = tstNet(tstInput)
+    
+    print("output shape")
+    print(tstout.shape)
+        
+        
+        
+        
+        
+        
+        
